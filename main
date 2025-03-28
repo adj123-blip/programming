@@ -1,0 +1,65 @@
+from flask import Flask, render_template, request, redirect, url_for
+import sqlite3
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+
+app = Flask(__name__)
+DATABASE = 'movies.db'
+CSV_FILE_PATH = r"C:\Users\andap\Desktop\movies.csv"
+
+
+# Inicializē datubāzi
+def init_db():
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''CREATE TABLE IF NOT EXISTS movies (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            title TEXT NOT NULL,
+                            genre TEXT NOT NULL,
+                            rating REAL NOT NULL)''')
+        conn.commit()
+
+
+# Ielādē sākotnējos datus no CSV, ja datubāze ir tukša
+init_db()
+
+
+def load_data_from_csv():
+    if os.path.exists(CSV_FILE_PATH):
+        try:
+            df = pd.read_csv(CSV_FILE_PATH)
+            required_columns = {'title', 'genre', 'rating'}
+            if not required_columns.issubset(df.columns):
+                print("Kļūda: CSV failam jāsatur kolonnas: title, genre, rating")
+                return
+
+            df['rating'] = pd.to_numeric(df['rating'], errors='coerce').fillna(0)
+
+            with sqlite3.connect(DATABASE) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM movies")
+                count = cursor.fetchone()
+                if count and count[0] == 0:
+                    cursor.executemany("INSERT INTO movies (title, genre, rating) VALUES (?, ?, ?)",
+                                       df[['title', 'genre', 'rating']].values.tolist())
+                    conn.commit()
+                    print("CSV dati veiksmīgi ielādēti datubāzē!")
+        except Exception as e:
+            print(f"Kļūda ielādējot CSV: {e}")
+    else:
+        print("CSV fails NAV atrasts!")
+
+
+load_data_from_csv()
+
+
+# Izveido histogrammu
+def generate_histogram():
+    if not os.path.exists('static'):
+        os.makedirs('static')
+
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT rating FROM movies")
+        ratings = [row[0] for row in cursor.fetchall()]
